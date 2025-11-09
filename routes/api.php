@@ -23,6 +23,8 @@ Route::match(['get', 'post'], '/auth/logout', [AuthController::class, 'logout'])
 // Public endpoints
 Route::get('/products/active-count', [\App\Http\Controllers\ClientController::class, 'activeCount']);
 Route::get('/orders/{id}/details', [\App\Http\Controllers\ClientController::class, 'publicOrderDetails']);
+// Public full products catalog (no auth required)
+Route::get('/public/products/full', [\App\Http\Controllers\ClientController::class, 'products']);
 
 Route::prefix('client')->group(function () {
     Route::get('/products', [ClientController::class, 'products']);
