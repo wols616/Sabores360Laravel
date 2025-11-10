@@ -293,6 +293,8 @@ class AdminController extends Controller
 
         $rows = Order::selectRaw("DATE(created_at) as date, COALESCE(SUM(total_amount),0) as total")
             ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            // Exclude cancelled/anulado orders
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
             ->groupBy(DB::raw('DATE(created_at)'))
             ->orderBy('date')
             ->get()
@@ -322,6 +324,8 @@ class AdminController extends Controller
 
         $rows = Order::selectRaw('seller_id, COALESCE(SUM(total_amount),0) as total')
             ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            // Exclude cancelled/anulado orders
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
             ->whereNotNull('seller_id')
             ->groupBy('seller_id')
             ->orderByDesc('total')
@@ -350,6 +354,8 @@ class AdminController extends Controller
         $rows = OrderItem::selectRaw('product_id, COALESCE(SUM(quantity),0) as qty')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->whereBetween('orders.created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            // Exclude cancelled/anulado orders from the join
+            ->whereRaw("LOWER(TRIM(orders.status)) NOT IN ('cancelado','anulado')")
             ->groupBy('product_id')
             ->orderByDesc('qty')
             ->limit($limit)
@@ -496,8 +502,13 @@ class AdminController extends Controller
         $prevStart = $start->copy()->subDays($periodDays);
         $prevEnd = $start->copy()->subDay();
 
-        $current = floatval(Order::whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])->sum('total_amount'));
-        $previous = floatval(Order::whereBetween('created_at', [$prevStart->toDateTimeString(), $prevEnd->toDateTimeString()])->sum('total_amount'));
+        // Exclude cancelled/anulado orders from revenue calculations
+        $current = floatval(Order::whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
+            ->sum('total_amount'));
+        $previous = floatval(Order::whereBetween('created_at', [$prevStart->toDateTimeString(), $prevEnd->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
+            ->sum('total_amount'));
 
         $percent_change = 0.0;
         if ($previous == 0.0) {
@@ -509,7 +520,9 @@ class AdminController extends Controller
         // YoY: same period last year
         $yoyStart = $start->copy()->subYear();
         $yoyEnd = $end->copy()->subYear();
-        $yoy = floatval(Order::whereBetween('created_at', [$yoyStart->toDateTimeString(), $yoyEnd->toDateTimeString()])->sum('total_amount'));
+        $yoy = floatval(Order::whereBetween('created_at', [$yoyStart->toDateTimeString(), $yoyEnd->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
+            ->sum('total_amount'));
         $yoy_percent = 0.0;
         if ($yoy == 0.0) {
             $yoy_percent = $yoy == $current ? 0.0 : ($current > 0.0 ? 100.0 : 0.0);
@@ -532,6 +545,7 @@ class AdminController extends Controller
         // By seller
         $bySellerRows = Order::selectRaw('seller_id, COALESCE(SUM(total_amount),0) as total, COUNT(*) as count')
             ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
             ->whereNotNull('seller_id')
             ->groupBy('seller_id')
             ->orderByDesc('total')
@@ -545,6 +559,7 @@ class AdminController extends Controller
         // By channel (use payment_method as proxy)
         $byChannelRows = Order::selectRaw('payment_method as label, COUNT(*) as count, COALESCE(SUM(total_amount),0) as total')
             ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
             ->groupBy('payment_method')
             ->get();
         $by_channel = [];
@@ -558,6 +573,7 @@ class AdminController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->join('categories', 'products.category_id', '=', 'categories.id')
             ->whereBetween('orders.created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(orders.status)) NOT IN ('cancelado','anulado')")
             ->selectRaw('categories.id as category_id, categories.name as label, COUNT(*) as count, COALESCE(SUM(order_items.quantity * order_items.unit_price),0) as total')
             ->groupBy('categories.id', 'categories.name')
             ->orderByDesc('total')
@@ -582,6 +598,7 @@ class AdminController extends Controller
 
         $rows = Order::selectRaw('client_id, COUNT(*) as orders_count, COALESCE(SUM(total_amount),0) as total')
             ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
             ->groupBy('client_id')
             ->orderByDesc('total')
             ->limit($limit)
@@ -594,6 +611,65 @@ class AdminController extends Controller
         }
 
         return response()->json(['success' => true, 'data' => ['top_clients' => $result]]);
+    }
+
+    /**
+     * GET /api/admin/stats/seller-sales-total
+     * Query params: seller_id (required), date (YYYY-MM-DD, optional)
+     * Returns the total monetary sales (sum of total_amount) for the given seller on the given day.
+     * Orders with status 'Cancelado' are excluded from the total (all other statuses are counted).
+     */
+    public function statsSellerTotal(Request $request)
+    {
+        if (!$this->getAdminUser($request))
+            return response()->json(['success' => false, 'message' => 'forbidden'], 403);
+
+        $sellerId = $request->query('seller_id') ?? $request->query('vendedorId');
+        if (!$sellerId) {
+            return response()->json(['success' => false, 'message' => 'seller_id is required'], 400);
+        }
+
+        $date = $request->query('date');
+        $day = $date ? Carbon::parse($date) : Carbon::now();
+        $start = $day->copy()->startOfDay();
+        $end = $day->copy()->endOfDay();
+
+        // Exclude canceled/anulado orders (case-insensitive, trim whitespace);
+        // count all other statuses for the seller on that day.
+        $total = floatval(Order::where('seller_id', intval($sellerId))
+            ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereRaw("LOWER(TRIM(status)) NOT IN ('cancelado','anulado')")
+            ->sum('total_amount'));
+
+        return response()->json(['success' => true, 'total' => $total]);
+    }
+
+    /**
+     * GET /api/admin/stats/seller-delivered-count
+     * Query params: seller_id (required), date (YYYY-MM-DD, optional)
+     * Returns the count of delivered orders (status 'Entregado') for the given seller on the given day.
+     */
+    public function statsSellerDeliveredCount(Request $request)
+    {
+        if (!$this->getAdminUser($request))
+            return response()->json(['success' => false, 'message' => 'forbidden'], 403);
+
+        $sellerId = $request->query('seller_id') ?? $request->query('vendedorId');
+        if (!$sellerId) {
+            return response()->json(['success' => false, 'message' => 'seller_id is required'], 400);
+        }
+
+        $date = $request->query('date');
+        $day = $date ? Carbon::parse($date) : Carbon::now();
+        $start = $day->copy()->startOfDay();
+        $end = $day->copy()->endOfDay();
+
+        $count = intval(Order::where('seller_id', intval($sellerId))
+            ->where('status', 'Entregado')
+            ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->count());
+
+        return response()->json(['success' => true, 'count' => $count]);
     }
 
     // Users management

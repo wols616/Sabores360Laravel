@@ -91,6 +91,8 @@ Route::prefix('admin')->group(function () {
     // Extra admin stats endpoints
     Route::get('/stats/revenue-by-segment', [AdminController::class, 'statsRevenueBySegment'])->middleware(\App\Http\Middleware\JwtAuthMiddleware::class);
     Route::get('/stats/top-clients', [AdminController::class, 'statsTopClients'])->middleware(\App\Http\Middleware\JwtAuthMiddleware::class);
+    Route::get('/stats/seller-sales-total', [AdminController::class, 'statsSellerTotal'])->middleware(\App\Http\Middleware\JwtAuthMiddleware::class);
+    Route::get('/stats/seller-delivered-count', [AdminController::class, 'statsSellerDeliveredCount'])->middleware(\App\Http\Middleware\JwtAuthMiddleware::class);
 
     // Users management
     Route::get('/users', [AdminController::class, 'users'])->middleware(\App\Http\Middleware\JwtAuthMiddleware::class);

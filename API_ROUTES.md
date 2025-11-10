@@ -610,6 +610,42 @@ Formato de fallo recomendado:
 
 Si quieres que convierta esto a una sección OpenAPI parcial / JSON para compartir con frontend devs, puedo generarlo a continuación.
 
+### GET /api/admin/stats/seller-sales-total
+
+-   Query params: seller_id (required), date (YYYY-MM-DD, optional)
+-   Propósito: Devuelve el total monetario (suma de total_amount) de un vendedor específico en la fecha indicada. Se excluyen pedidos con estado `Cancelado`; el resto de estados se cuentan en el total.
+-   Response ejemplo:
+
+```json
+{
+    "success": true,
+    "total": 1234.5
+}
+```
+
+Notas:
+
+-   Si no se pasa `date`, se usa el día actual.
+-   `seller_id` puede pasarse también como `vendedorId`.
+
+### GET /api/admin/stats/seller-delivered-count
+
+-   Query params: seller_id (required), date (YYYY-MM-DD, optional)
+-   Propósito: Devuelve la cantidad numérica de pedidos entregados (`Entregado`) para un vendedor en la fecha indicada.
+-   Response ejemplo:
+
+```json
+{
+    "success": true,
+    "count": 5
+}
+```
+
+Notas:
+
+-   Si no se pasa `date`, se usa el día actual.
+-   Si `seller_id` no se suministra, el endpoint responde con 400 y un mensaje de error.
+
 ### Users management
 
 -   GET /api/admin/users -> paginated list of users (page, per_page)
