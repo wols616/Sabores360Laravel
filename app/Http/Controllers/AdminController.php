@@ -345,7 +345,7 @@ class AdminController extends Controller
         $dateTo = $request->query('date_to');
         $dateFrom = $request->query('date_from');
         $end = $dateTo ? Carbon::parse($dateTo)->endOfDay() : Carbon::now()->endOfDay();
-    $start = $dateFrom ? Carbon::parse($dateFrom)->startOfDay() : $end->copy()->subDays(29)->startOfDay();
+        $start = $dateFrom ? Carbon::parse($dateFrom)->startOfDay() : $end->copy()->subDays(29)->startOfDay();
 
         $rows = OrderItem::selectRaw('product_id, COALESCE(SUM(quantity),0) as qty')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
