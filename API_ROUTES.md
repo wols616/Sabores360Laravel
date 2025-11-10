@@ -403,20 +403,198 @@ All admin endpoints require JWT and the user to have admin role (checked in cont
 -   GET /api/admin/reports -> returns placeholders for sales_by_day, sales_by_seller, top_products
 -   GET /api/admin/reports/export -> file download
 
-### Stats endpoints (placeholders)
+### Stats endpoints (admin)
 
--   GET /api/admin/stats/revenue-by-segment
--   GET /api/admin/stats/top-clients (query param: limit)
--   GET /api/admin/stats/sales-by-day
--   GET /api/admin/stats/sales-by-seller
--   GET /api/admin/stats/top-products
--   GET /api/admin/stats/users-growth
--   GET /api/admin/stats/orders-by-status
--   GET /api/admin/stats/orders-period
--   GET /api/admin/stats/rates
--   GET /api/admin/stats/revenue-summary
+Las siguientes rutas están pensadas para panel administrativo. Todas requieren autenticación (JWT) y usuario con rol admin.
 
-All stats endpoints return simple JSON placeholders in current implementation (success:true and an empty array/object or zeros).
+GET /api/admin/stats/revenue-summary
+
+- Query params: date_from (YYYY-MM-DD, optional), date_to (YYYY-MM-DD, optional)
+- Propósito: Resumen numérico de ingresos (periodo actual vs anterior, crecimiento y YoY)
+- Response (mínimo recomendado):
+
+```json
+{
+	"success": true,
+	"data": {
+		"current_revenue": 12345.67,
+		"previous_revenue": 9876.54,
+		"percent_change": 25.0,
+		"yoy_revenue": 100000.0,
+		"yoy_percent_change": 10.5
+	}
+}
+```
+
+GET /api/admin/stats/sales-by-day
+
+- Query params: date_from, date_to
+- Propósito: Serie diaria de ventas para gráficas lineales. Devuelve una entrada por día del rango (llenando con 0 si no hubo ventas).
+- Response:
+
+```json
+{
+	"success": true,
+	"data": {
+		"sales_by_day": [
+			{ "fecha": "2025-10-01", "totalVentas": 123.45 },
+			{ "fecha": "2025-10-02", "totalVentas": 234.56 }
+		]
+	}
+}
+```
+
+GET /api/admin/stats/users-growth
+
+- Query params: date_from, date_to
+- Propósito: Nuevos usuarios por día. Devuelve array `users_growth` con fecha y cantidad.
+- Response:
+
+```json
+{
+	"success": true,
+	"data": {
+		"users_growth": [
+			{ "fecha": "2025-10-01", "cantidadUsuarios": 5 },
+			{ "fecha": "2025-10-02", "cantidadUsuarios": 8 }
+		]
+	}
+}
+```
+
+GET /api/admin/stats/sales-by-seller
+
+- Query params: date_from, date_to
+- Propósito: Ventas agregadas por vendedor para gráfico de barras.
+- Cada elemento contiene: `vendedorId`, `vendedorNombre`, `totalVentas`.
+- Response:
+
+```json
+{
+	"success": true,
+	"data": {
+		"sales_by_seller": [
+			{ "vendedorId": 12, "vendedorNombre": "Ana", "totalVentas": 1234.5 },
+			{ "vendedorId": 15, "vendedorNombre": "Luis", "totalVentas": 987.0 }
+		]
+	}
+}
+```
+
+GET /api/admin/stats/top-products
+
+- Query params: date_from, date_to, limit (optional)
+- Propósito: Top N productos por cantidad vendida. Cada elemento: `productoId`, `productoNombre`, `cantidadVendida`.
+- Response:
+
+```json
+{
+	"success": true,
+	"data": {
+		"top_products": [
+			{ "productoId": 101, "productoNombre": "Pizza Margarita", "cantidadVendida": 120 },
+			{ "productoId": 202, "productoNombre": "Ensalada César", "cantidadVendida": 88 }
+		]
+	}
+}
+```
+
+GET /api/admin/stats/orders-by-status
+
+- Query params: date_from, date_to
+- Propósito: Distribución de pedidos por estado (pie chart). Cada elemento: `status`, `count`.
+- Response:
+
+```json
+{
+	"success": true,
+	"data": {
+		"orders_by_status": [
+			{ "status": "Pendiente", "count": 10 },
+			{ "status": "Entregado", "count": 50 }
+		]
+	}
+}
+```
+
+GET /api/admin/stats/orders-period
+
+- Query params: date_from, date_to, granularity (optional: daily|weekly|monthly)
+- Propósito: Serie de pedidos por periodo + métricas comparativas (current/previous/percent change)
+- Response (forma ideal):
+
+```json
+{
+	"success": true,
+	"data": {
+		"series": [ { "label": "2025-10-01", "count": 5 }, ... ],
+		"current_total": 100,
+		"previous_total": 75,
+		"percent_change": 33.333,
+		"granularity": "daily"
+	}
+}
+```
+
+GET /api/admin/stats/rates
+
+- Query params: date_from, date_to
+- Propósito: Tasas (confirmación, cierre, cancelación). El frontend acepta valores numéricos o objetos con `value`/`rate`.
+- Response:
+
+```json
+{
+	"success": true,
+	"data": {
+		"confirmation_rate": 0.75,
+		"closure_rate": 0.5,
+		"cancellation_rate": 0.1
+	}
+}
+```
+
+GET /api/admin/stats/revenue-by-segment
+
+- Query params: date_from, date_to
+- Propósito: Desglose de ingresos por vendedor / canal / categoría.
+- Response ejemplo:
+
+```json
+{
+	"success": true,
+	"data": {
+		"by_seller": [ { "vendedorId": 12, "vendedorNombre": "Ana", "totalVentas": 1234.5 } ],
+		"by_channel": [ { "label": "Tarjeta", "count": 200, "total": 12345.6 } ],
+		"by_category": [ { "label": "Bebidas", "count": 300, "total": 4321.2 } ]
+	}
+}
+```
+
+GET /api/admin/stats/top-clients
+
+- Query params: date_from, date_to, limit (optional)
+- Propósito: Clientes con más pedidos / importe. Elementos con `label` (cliente), `count` (número de pedidos) y `total` (importe).
+- Response ejemplo:
+
+```json
+{
+	"success": true,
+	"data": {
+		"top_clients": [
+			{ "label": "Juan Pérez", "count": 12, "total": 1200.50 },
+			{ "label": "María López", "count": 8, "total": 900.00 }
+		]
+	}
+}
+```
+
+Formato de fallo recomendado:
+
+```json
+{ "success": false, "message": "Descripción del error" }
+```
+
+Si quieres que convierta esto a una sección OpenAPI parcial / JSON para compartir con frontend devs, puedo generarlo a continuación.
 
 ### Users management
 
