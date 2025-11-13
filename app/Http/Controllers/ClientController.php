@@ -133,6 +133,22 @@ class ClientController extends Controller
         return response()->json(['success' => true, 'categories' => Category::all()]);
     }
 
+    // Public endpoint: GET /api/public/categories
+    // Returns full category entities for public consumption (no auth required)
+    public function publicCategories()
+    {
+        $cats = Category::orderBy('name')->get()->map(function ($c) {
+            return [
+                'id' => $c->id,
+                'name' => $c->name,
+                'description' => $c->description,
+                'createdAt' => $c->created_at
+            ];
+        })->all();
+
+        return response()->json(['success' => true, 'categories' => $cats]);
+    }
+
     // GET /api/client/categories/{id}
     public function categoryDetail($id)
     {

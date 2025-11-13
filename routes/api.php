@@ -25,6 +25,8 @@ Route::get('/products/active-count', [\App\Http\Controllers\ClientController::cl
 Route::get('/orders/{id}/details', [\App\Http\Controllers\ClientController::class, 'publicOrderDetails']);
 // Public full products catalog (no auth required)
 Route::get('/public/products/full', [\App\Http\Controllers\ClientController::class, 'products']);
+// Public categories catalog (no auth required)
+Route::get('/public/categories', [\App\Http\Controllers\ClientController::class, 'publicCategories']);
 
 Route::prefix('client')->group(function () {
     Route::get('/products', [ClientController::class, 'products']);

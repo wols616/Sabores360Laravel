@@ -114,6 +114,15 @@ Client routes (some require JWT):
 -   Response: { success: true, products: [Product], pagination: { current_page, last_page, per_page, total } }
 -   Product entity: { id, category: {id,name}, name, description, price, stock, imageUrl, isAvailable, createdAt, updatedAt }
 
+### GET /api/public/categories
+
+-   Qué hace: Devuelve todas las categorías como entidades completas. Útil para poblar menús, filtros y vistas públicas donde no se requiere autenticación.
+-   Método: GET
+-   Acceso: Público — NO requiere Authorization header ni token JWT.
+-   Query params: ninguno
+-   Response: { "success": true, "categories": [ Category ] }
+    -   Category entity incluye: { id, name, description, createdAt }
+
 ### POST /api/client/orders
 
 -   Qué hace: Crea un pedido (autenticado). Valida cart items, calcula total y crea Order + OrderItems.
