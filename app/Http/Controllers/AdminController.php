@@ -221,7 +221,57 @@ class AdminController extends Controller
     {
         if (!$this->getAdminUser($request))
             return response()->json(['success' => false, 'message' => 'forbidden'], 403);
-        $p = Product::create($request->only(['category_id', 'name', 'description', 'price', 'stock', 'image_url', 'is_available']));
+        // Accept both snake_case and camelCase keys from clients
+        $data = $request->only(['category_id', 'categoryId', 'name', 'description', 'price', 'stock', 'image_url', 'imageUrl', 'is_available', 'isAvailable']);
+
+        // Normalize keys
+        if (isset($data['categoryId']) && !isset($data['category_id']))
+            $data['category_id'] = $data['categoryId'];
+        if (isset($data['imageUrl']) && !isset($data['image_url']))
+            $data['image_url'] = $data['imageUrl'];
+        if (isset($data['isAvailable']) && !isset($data['is_available']))
+            $data['is_available'] = $data['isAvailable'];
+
+        // Basic validation
+        $name = trim($data['name'] ?? '');
+        $price = $data['price'] ?? null;
+        $stock = $data['stock'] ?? null;
+        $categoryId = $data['category_id'] ?? null;
+
+        if ($name === '' || $price === null || $stock === null || $categoryId === null) {
+            return response()->json(['success' => false, 'message' => 'invalid_input: name, price, stock and category_id are required'], 400);
+        }
+
+        if (!is_numeric($price) || floatval($price) < 0) {
+            return response()->json(['success' => false, 'message' => 'invalid_input: price must be a non-negative number'], 400);
+        }
+
+        if (!is_numeric($stock) || intval($stock) < 0) {
+            return response()->json(['success' => false, 'message' => 'invalid_input: stock must be a non-negative integer'], 400);
+        }
+
+        // Check category exists
+        $cat = Category::find(intval($categoryId));
+        if (!$cat) {
+            return response()->json(['success' => false, 'message' => 'invalid_input: category_id not found'], 400);
+        }
+
+        $payload = [
+            'category_id' => intval($categoryId),
+            'name' => $name,
+            'description' => $data['description'] ?? null,
+            'price' => number_format(floatval($price), 2, '.', ''),
+            'stock' => intval($stock),
+            'image_url' => $data['image_url'] ?? null,
+            'is_available' => isset($data['is_available']) ? (bool) $data['is_available'] : true,
+        ];
+
+        try {
+            $p = Product::create($payload);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'db_error: ' . $e->getMessage()], 500);
+        }
+
         return response()->json(['success' => true, 'id' => $p->id, 'name' => $p->name]);
     }
 

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderItem;
+use Illuminate\Support\Facades\DB;
 
 class ClientController extends Controller
 {
@@ -89,6 +90,7 @@ class ClientController extends Controller
         $total = 0;
         $itemsToCreate = [];
 
+        // Validate cart items first and build list
         foreach ($cart as $it) {
             if (!isset($it['id']) || !isset($it['quantity'])) {
                 return response()->json(['success' => false, 'message' => 'invalid_cart_item'], 400);
@@ -100,28 +102,49 @@ class ClientController extends Controller
             }
             $p = Product::find($productId);
             if (!$p) {
-                return response()->json(['success' => false, 'message' => 'product_not_found'], 400);
+                return response()->json(['success' => false, 'message' => 'product_not_found', 'product_id' => $productId], 400);
+            }
+            // Check availability
+            if (!$p->is_available) {
+                return response()->json(['success' => false, 'message' => 'product_unavailable', 'product_id' => $productId], 400);
+            }
+            if ($p->stock < $qty) {
+                return response()->json(['success' => false, 'message' => 'insufficient_stock', 'product_id' => $productId, 'available' => $p->stock], 400);
             }
             $total += $p->price * $qty;
             $itemsToCreate[] = ['product' => $p, 'quantity' => $qty, 'unit_price' => $p->price];
         }
 
-        $order = Order::create([
-            'client_id' => $user->id,
-            'delivery_address' => $delivery,
-            'total_amount' => $total,
-            'status' => 'Pendiente',
-            'payment_method' => $payment,
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
+        // Create order and items inside a transaction; decrement stock atomically
+        try {
+            $order = DB::transaction(function () use ($user, $delivery, $payment, $total, $itemsToCreate) {
+                $order = Order::create([
+                    'client_id' => $user->id,
+                    'delivery_address' => $delivery,
+                    'total_amount' => $total,
+                    'status' => 'Pendiente',
+                    'payment_method' => $payment,
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
 
-        foreach ($itemsToCreate as $it) {
-            OrderItem::create([
-                'order_id' => $order->id,
-                'product_id' => $it['product']->id,
-                'quantity' => $it['quantity'],
-                'unit_price' => $it['unit_price']
-            ]);
+                foreach ($itemsToCreate as $it) {
+                    OrderItem::create([
+                        'order_id' => $order->id,
+                        'product_id' => $it['product']->id,
+                        'quantity' => $it['quantity'],
+                        'unit_price' => $it['unit_price']
+                    ]);
+
+                    // Decrement product stock
+                    $p = Product::find($it['product']->id);
+                    $p->stock = max(0, $p->stock - $it['quantity']);
+                    $p->save();
+                }
+
+                return $order;
+            });
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'db_error', 'error' => $e->getMessage()], 500);
         }
 
         return response()->json(['success' => true, 'order_id' => $order->id]);
@@ -283,22 +306,51 @@ class ClientController extends Controller
             return response()->json(['success' => false, 'message' => 'forbidden'], 403);
         }
 
-        $order = Order::create([
-            'client_id' => $old->client_id,
-            'delivery_address' => $old->delivery_address,
-            'total_amount' => $old->total_amount,
-            'status' => 'Pendiente',
-            'payment_method' => $old->payment_method,
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
-
+        // Validate stock for all items before creating
+        $items = [];
         foreach ($old->items as $it) {
-            OrderItem::create([
-                'order_id' => $order->id,
-                'product_id' => $it->product_id,
-                'quantity' => $it->quantity,
-                'unit_price' => $it->unit_price
-            ]);
+            $p = Product::find($it->product_id);
+            if (!$p) {
+                return response()->json(['success' => false, 'message' => 'product_not_found', 'product_id' => $it->product_id], 400);
+            }
+            if (!$p->is_available) {
+                return response()->json(['success' => false, 'message' => 'product_unavailable', 'product_id' => $it->product_id], 400);
+            }
+            if ($p->stock < $it->quantity) {
+                return response()->json(['success' => false, 'message' => 'insufficient_stock', 'product_id' => $it->product_id, 'available' => $p->stock], 400);
+            }
+            $items[] = ['product' => $p, 'quantity' => $it->quantity, 'unit_price' => $it->unit_price];
+        }
+
+        try {
+            $order = DB::transaction(function () use ($old, $items) {
+                $order = Order::create([
+                    'client_id' => $old->client_id,
+                    'delivery_address' => $old->delivery_address,
+                    'total_amount' => $old->total_amount,
+                    'status' => 'Pendiente',
+                    'payment_method' => $old->payment_method,
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
+
+                foreach ($items as $it) {
+                    OrderItem::create([
+                        'order_id' => $order->id,
+                        'product_id' => $it['product']->id,
+                        'quantity' => $it['quantity'],
+                        'unit_price' => $it['unit_price']
+                    ]);
+
+                    // decrement stock
+                    $p = Product::find($it['product']->id);
+                    $p->stock = max(0, $p->stock - $it['quantity']);
+                    $p->save();
+                }
+
+                return $order;
+            });
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'db_error', 'error' => $e->getMessage()], 500);
         }
 
         return response()->json(['success' => true, 'order_id' => $order->id]);
